@@ -126,8 +126,8 @@ mysqli_close($conn);
 
             <?php if (!empty($announcement_datetime)): ?>
             <div class="text-center mb-6">
-                <p class="text-gray-700 text-lg mb-2">Pengumuman akan dibuka pada:</p>
-                <p id="announcement-date" class="text-xl font-semibold text-blue-600"><?php echo date('d F Y H:i:s', strtotime($announcement_datetime)); ?> WIB</p>
+                <!-- <p class="text-gray-700 text-lg mb-2">Pengumuman akan dibuka pada:</p>
+                <p id="announcement-date" class="text-xl font-semibold text-blue-600"><?php echo date('d F Y H:i:s', strtotime($announcement_datetime)); ?> WIB</p> -->
                 <div id="countdown" class="countdown-timer text-blue-600 mt-4"></div>
             </div>
             <?php endif; ?>
@@ -201,7 +201,13 @@ mysqli_close($conn);
                 const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
                 const seconds = Math.floor((distance % (1000 * 60)) / 1000);
 
-                countdownElement.innerHTML = `${days}d ${hours}h ${minutes}m ${seconds}s`;
+                // Format angka selalu 2 digit, pakai fungsi padStart
+                const daysStr = String(days).padStart(2, '0');
+                const hoursStr = String(hours).padStart(2, '0');
+                const minutesStr = String(minutes).padStart(2, '0');
+                const secondsStr = String(seconds).padStart(2, '0');
+
+                countdownElement.innerHTML = `${daysStr} HARI : ${hoursStr} JAM : ${minutesStr} MENIT : ${secondsStr} DETIK`;
                 checkButton.disabled = true;
                 nisnInput.disabled = true;
             }

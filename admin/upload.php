@@ -115,6 +115,40 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             $error_message .= "File yang diunggah bukan gambar. ";
         }
     }
+
+    // Upload Stempel Sekolah
+    if (isset($_FILES["school_stamp"]) && $_FILES["school_stamp"]["error"] == 0) {
+        $file_name = basename($_FILES["school_stamp"]["name"]);
+        $new_file_name = "stamp_" . time() . "_" . $file_name;
+        $target_file_absolute = $target_dir_absolute . DIRECTORY_SEPARATOR . $new_file_name;
+        $imageFileType = strtolower(pathinfo($target_file_absolute, PATHINFO_EXTENSION));
+
+        // Path yang akan disimpan di database (relatif dari root aplikasi)
+        $relative_path_for_db = 'uploads/' . $new_file_name;
+
+        // Cek apakah file gambar asli
+        $check = getimagesize($_FILES["school_stamp"]["tmp_name"]);
+        if ($check !== false) {
+            // Izinkan format file tertentu
+            if (in_array($imageFileType, ["jpg", "png", "jpeg", "gif"])) {
+                if (move_uploaded_file($_FILES["school_stamp"]["tmp_name"], $target_file_absolute)) {
+                    if (saveSettingPath($conn, 'school_stamp_path', $relative_path_for_db)) {
+                        $success_message .= "Stempel sekolah berhasil diunggah. ";
+                    } else {
+                        // Jika gagal menyimpan ke DB, hapus file yang sudah terunggah
+                        unlink($target_file_absolute);
+                        $error_message .= "Gagal menyimpan path stempel ke database. ";
+                    }
+                } else {
+                    $error_message .= "Terjadi kesalahan saat mengunggah stempel. ";
+                }
+            } else {
+                $error_message .= "Maaf, hanya file JPG, JPEG, PNG & GIF yang diizinkan untuk stempel. ";
+            }
+        } else {
+            $error_message .= "File yang diunggah bukan gambar. ";
+        }
+    }
 }
 
 // Ambil path file yang sudah ada untuk ditampilkan
@@ -123,10 +157,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 // kita perlu menambahkan ../ di depannya.
 $current_school_logo_relative_db_path = getSettingPath($conn, 'school_logo_path');
 $current_principal_signature_relative_db_path = getSettingPath($conn, 'principal_signature_path');
+$current_school_stamp_relative_db_path = getSettingPath($conn, 'school_stamp_path'); // Ambil path stempel
 
 $display_school_logo_path = !empty($current_school_logo_relative_db_path) ? '../' . $current_school_logo_relative_db_path : '';
 $display_principal_signature_path = !empty($current_principal_signature_relative_db_path) ? '../' . $current_principal_signature_relative_db_path : '';
-
+$display_school_stamp_path = !empty($current_school_stamp_relative_db_path) ? '../' . $current_school_stamp_relative_db_path : ''; // Path untuk tampilan stempel
 
 ?>
 
@@ -163,6 +198,15 @@ $display_principal_signature_path = !empty($current_principal_signature_relative
             <?php if (!empty($display_principal_signature_path) && file_exists($display_principal_signature_path)): ?>
                 <p class="text-gray-600 text-sm mt-2">Tanda Tangan saat ini:</p>
                 <img src="<?php echo htmlspecialchars($display_principal_signature_path); ?>" alt="Tanda Tangan Kepala Sekolah" class="mt-2 h-20 w-auto object-contain rounded-md border border-gray-300 p-1">
+            <?php endif; ?>
+        </div>
+
+        <div class="mb-6">
+            <label for="school_stamp" class="block text-gray-700 text-sm font-bold mb-2">Upload Stempel Sekolah (PNG, JPG, GIF):</label>
+            <input type="file" name="school_stamp" id="school_stamp" accept=".png,.jpg,.jpeg,.gif" class="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <?php if (!empty($display_school_stamp_path) && file_exists($display_school_stamp_path)): ?>
+                <p class="text-gray-600 text-sm mt-2">Stempel saat ini:</p>
+                <img src="<?php echo htmlspecialchars($display_school_stamp_path); ?>" alt="Stempel Sekolah" class="mt-2 h-20 w-auto object-contain rounded-md border border-gray-300 p-1">
             <?php endif; ?>
         </div>
 

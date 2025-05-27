@@ -14,10 +14,11 @@ $student_data_edit = [
     'full_name' => '',
     'place_of_birth' => '',
     'date_of_birth' => '',
-    'nisn_number' => '', // Assuming this might be different from 'nisn'
+    'nisn_number' => '',
     'graduation_date' => '',
     'program_keahlian' => '',
-    'konsentrasi_keahlian' => ''
+    'konsentrasi_keahlian' => '',
+    'photo_path' => '' // Tambahkan photo_path
 ];
 
 // --- Handle Form Submission (Add/Edit Student) ---
@@ -32,17 +33,69 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action'])) {
     $program_keahlian = trim($_POST['program_keahlian']);
     $konsentrasi_keahlian = trim($_POST['konsentrasi_keahlian']);
 
+    $current_photo_path = $_POST['current_photo_path'] ?? ''; // Untuk menyimpan path foto lama saat edit
+
+    // Initialize photo_path_for_db with current path in case no new photo is uploaded
+    $photo_path_for_db = $current_photo_path;
+
+    // Process upload foto siswa jika ada
+    if (isset($_FILES["student_photo"]) && $_FILES["student_photo"]["error"] == 0) {
+        // Define the relative upload directory from the project root
+        $relative_upload_dir = 'uploads' . DIRECTORY_SEPARATOR . 'students' . DIRECTORY_SEPARATOR;
+        $absolute_upload_dir = dirname(__DIR__) . DIRECTORY_SEPARATOR . $relative_upload_dir;
+
+        // Create the directory if it doesn't exist
+        if (!is_dir($absolute_upload_dir)) {
+            if (!mkdir($absolute_upload_dir, 0777, true)) { // 0777 for development ease, consider 0755 for production
+                $error_message .= "Gagal membuat direktori upload: " . $absolute_upload_dir . ". Mohon periksa izin folder. ";
+                goto skip_photo_upload;
+            }
+        }
+
+        $file_name = basename($_FILES["student_photo"]["name"]);
+        // Sanitize filename to prevent issues with special characters in path
+        $file_name_sanitized = preg_replace("/[^a-zA-Z0-9_\-.]/", "", $file_name);
+        $new_file_name = "student_photo_" . time() . "_" . $nisn . "_" . $file_name_sanitized;
+        $target_file_absolute = $absolute_upload_dir . $new_file_name;
+
+        $imageFileType = strtolower(pathinfo($target_file_absolute, PATHINFO_EXTENSION));
+
+        $check = getimagesize($_FILES["student_photo"]["tmp_name"]);
+        if ($check !== false) {
+            if (in_array($imageFileType, ["jpg", "png", "jpeg", "gif"])) {
+                if (move_uploaded_file($_FILES["student_photo"]["tmp_name"], $target_file_absolute)) {
+                    $photo_path_for_db = $relative_upload_dir . $new_file_name;
+
+                    // Hapus foto lama jika ada dan berbeda dengan yang baru
+                    if (!empty($current_photo_path) && $current_photo_path != $photo_path_for_db) {
+                        $old_photo_absolute_path = dirname(__DIR__) . DIRECTORY_SEPARATOR . $current_photo_path;
+                        if (file_exists($old_photo_absolute_path)) {
+                            unlink($old_photo_absolute_path);
+                        }
+                    }
+                } else {
+                    $error_message .= "Terjadi kesalahan saat mengunggah foto siswa. File tidak dapat dipindahkan. Mohon periksa izin folder 'uploads/students/'. ";
+                }
+            } else {
+                $error_message .= "Maaf, hanya file JPG, JPEG, PNG & GIF yang diizinkan untuk foto siswa. ";
+            }
+        } else {
+            $error_message = "File yang diunggah bukan gambar untuk foto siswa. ";
+        }
+    }
+    skip_photo_upload: 
+    
+    // Continue with database insert/update
     if (empty($nisn) || empty($full_name) || empty($graduation_date)) {
         $error_message = "NISN, Nama Lengkap, dan Tanggal Kelulusan tidak boleh kosong.";
     } else {
         if ($action == 'add') {
-            $sql = "INSERT INTO students (nisn, full_name, place_of_birth, date_of_birth, nisn_number, graduation_date, program_keahlian, konsentrasi_keahlian) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+            $sql = "INSERT INTO students (nisn, full_name, place_of_birth, date_of_birth, nisn_number, graduation_date, program_keahlian, konsentrasi_keahlian, photo_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
             if ($stmt = mysqli_prepare($conn, $sql)) {
-                mysqli_stmt_bind_param($stmt, "ssssssss", $nisn, $full_name, $place_of_birth, $date_of_birth, $nisn_number, $graduation_date, $program_keahlian, $konsentrasi_keahlian);
+                mysqli_stmt_bind_param($stmt, "sssssssss", $nisn, $full_name, $place_of_birth, $date_of_birth, $nisn_number, $graduation_date, $program_keahlian, $konsentrasi_keahlian, $photo_path_for_db);
                 if (mysqli_stmt_execute($stmt)) {
                     $success_message = "Data siswa berhasil ditambahkan.";
                 } else {
-                    $error_message = "Error: " . mysqli_error($conn);
                     if (mysqli_errno($conn) == 1062) { // Duplicate entry error code
                         $error_message = "NISN sudah terdaftar. Mohon gunakan NISN lain.";
                     } else {
@@ -53,13 +106,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action'])) {
             }
         } elseif ($action == 'edit') {
             $student_id = $_POST['student_id'];
-            $sql = "UPDATE students SET nisn = ?, full_name = ?, place_of_birth = ?, date_of_birth = ?, nisn_number = ?, graduation_date = ?, program_keahlian = ?, konsentrasi_keahlian = ? WHERE id = ?";
+            $sql = "UPDATE students SET nisn = ?, full_name = ?, place_of_birth = ?, date_of_birth = ?, nisn_number = ?, graduation_date = ?, program_keahlian = ?, konsentrasi_keahlian = ?, photo_path = ? WHERE id = ?";
             if ($stmt = mysqli_prepare($conn, $sql)) {
-                mysqli_stmt_bind_param($stmt, "ssssssssi", $nisn, $full_name, $place_of_birth, $date_of_birth, $nisn_number, $graduation_date, $program_keahlian, $konsentrasi_keahlian, $student_id);
+                mysqli_stmt_bind_param($stmt, "sssssssssi", $nisn, $full_name, $place_of_birth, $date_of_birth, $nisn_number, $graduation_date, $program_keahlian, $konsentrasi_keahlian, $photo_path_for_db, $student_id);
                 if (mysqli_stmt_execute($stmt)) {
                     $success_message = "Data siswa berhasil diperbarui.";
                 } else {
-                    $error_message = "Error: " . mysqli_error($conn);
                      if (mysqli_errno($conn) == 1062) { // Duplicate entry error code
                         $error_message = "NISN sudah terdaftar. Mohon gunakan NISN lain.";
                     } else {
@@ -75,6 +127,24 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action'])) {
 // --- Handle Delete Student ---
 if (isset($_GET['delete_id'])) {
     $delete_id = $_GET['delete_id'];
+    // Ambil photo_path sebelum menghapus siswa
+    $sql_get_photo = "SELECT photo_path FROM students WHERE id = ?";
+    if ($stmt_get_photo = mysqli_prepare($conn, $sql_get_photo)) {
+        mysqli_stmt_bind_param($stmt_get_photo, "i", $delete_id);
+        mysqli_stmt_execute($stmt_get_photo);
+        mysqli_stmt_store_result($stmt_get_photo);
+        if (mysqli_stmt_num_rows($stmt_get_photo) == 1) {
+            mysqli_stmt_bind_result($stmt_get_photo, $photo_to_delete);
+            mysqli_stmt_fetch($stmt_get_photo);
+            // Construct absolute path for deletion
+            $absolute_photo_path_to_delete = dirname(__DIR__) . DIRECTORY_SEPARATOR . $photo_to_delete;
+            if (!empty($photo_to_delete) && file_exists($absolute_photo_path_to_delete)) {
+                unlink($absolute_photo_path_to_delete); // Hapus file foto fisik
+            }
+        }
+        mysqli_stmt_close($stmt_get_photo);
+    }
+
     $sql = "DELETE FROM students WHERE id = ?";
     if ($stmt = mysqli_prepare($conn, $sql)) {
         mysqli_stmt_bind_param($stmt, "i", $delete_id);
@@ -109,6 +179,94 @@ if (isset($_GET['edit_id'])) {
         mysqli_stmt_close($stmt);
     }
 }
+
+// --- Handle Import CSV ---
+if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['import_action']) && $_POST['import_action'] == 'import_csv') {
+    if (isset($_FILES['csv_file']) && $_FILES['csv_file']['error'] == 0) {
+        $file_tmp_path = $_FILES['csv_file']['tmp_name'];
+        $file_ext = strtolower(pathinfo($_FILES['csv_file']['name'], PATHINFO_EXTENSION));
+
+        if ($file_ext == 'csv') {
+            $handle = fopen($file_tmp_path, "r");
+            if ($handle !== FALSE) {
+                // Skip header row
+                fgetcsv($handle); 
+
+                $imported_count = 0;
+                $skipped_count = 0;
+                $updated_count = 0;
+                $row_num = 1; // Start from 1 for header, actual data from 2
+
+                while (($data = fgetcsv($handle, 1000, ",")) !== FALSE) {
+                    $row_num++;
+                    // Assuming CSV columns order: nisn, full_name, place_of_birth, date_of_birth, nisn_number, graduation_date, program_keahlian, konsentrasi_keahlian, photo_filename
+                    if (count($data) >= 8) { // Minimum required fields
+                        $import_nisn = trim($data[0]);
+                        $import_full_name = trim($data[1]);
+                        $import_place_of_birth = trim($data[2]);
+                        $import_date_of_birth = trim($data[3]);
+                        $import_nisn_number = trim($data[4]);
+                        $import_graduation_date = trim($data[5]);
+                        $import_program_keahlian = trim($data[6]);
+                        $import_konsentrasi_keahlian = trim($data[7]);
+                        $import_photo_filename = isset($data[8]) ? trim($data[8]) : ''; // Optional photo filename
+
+                        $import_photo_path = !empty($import_photo_filename) ? 'uploads/students/' . $import_photo_filename : NULL;
+
+                        // Check if student with NISN already exists
+                        $sql_check_nisn = "SELECT id FROM students WHERE nisn = ?";
+                        if ($stmt_check = mysqli_prepare($conn, $sql_check_nisn)) {
+                            mysqli_stmt_bind_param($stmt_check, "s", $import_nisn);
+                            mysqli_stmt_execute($stmt_check);
+                            mysqli_stmt_store_result($stmt_check);
+
+                            if (mysqli_stmt_num_rows($stmt_check) > 0) {
+                                // Student exists, update data
+                                $sql_update = "UPDATE students SET full_name=?, place_of_birth=?, date_of_birth=?, nisn_number=?, graduation_date=?, program_keahlian=?, konsentrasi_keahlian=?, photo_path=? WHERE nisn=?";
+                                if ($stmt_update = mysqli_prepare($conn, $sql_update)) {
+                                    mysqli_stmt_bind_param($stmt_update, "sssssssss", $import_full_name, $import_place_of_birth, $import_date_of_birth, $import_nisn_number, $import_graduation_date, $import_program_keahlian, $import_konsentrasi_keahlian, $import_photo_path, $import_nisn);
+                                    if (mysqli_stmt_execute($stmt_update)) {
+                                        $updated_count++;
+                                    } else {
+                                        $error_message .= "Gagal memperbarui data siswa NISN " . htmlspecialchars($import_nisn) . " (Baris " . $row_num . "). ";
+                                    }
+                                    mysqli_stmt_close($stmt_update);
+                                }
+                            } else {
+                                // Student does not exist, insert new data
+                                $sql_insert = "INSERT INTO students (nisn, full_name, place_of_birth, date_of_birth, nisn_number, graduation_date, program_keahlian, konsentrasi_keahlian, photo_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                                if ($stmt_insert = mysqli_prepare($conn, $sql_insert)) {
+                                    mysqli_stmt_bind_param($stmt_insert, "sssssssss", $import_nisn, $import_full_name, $import_place_of_birth, $import_date_of_birth, $import_nisn_number, $import_graduation_date, $import_program_keahlian, $import_konsentrasi_keahlian, $import_photo_path);
+                                    if (mysqli_stmt_execute($stmt_insert)) {
+                                        $imported_count++;
+                                    } else {
+                                        $error_message .= "Gagal menambahkan data siswa NISN " . htmlspecialchars($import_nisn) . " (Baris " . $row_num . "). ";
+                                    }
+                                    mysqli_stmt_close($stmt_insert);
+                                }
+                            }
+                            mysqli_stmt_close($stmt_check);
+                        }
+                    } else {
+                        $skipped_count++;
+                        $error_message .= "Baris " . $row_num . " dilewati karena format tidak lengkap. ";
+                    }
+                }
+                fclose($handle);
+                $success_message = "Impor selesai. Ditambahkan: " . $imported_count . ", Diperbarui: " . $updated_count . ", Dilewati: " . $skipped_count . ".";
+            } else {
+                $error_message = "Gagal membuka file CSV.";
+            }
+        } else {
+            $error_message = "Mohon unggah file CSV yang valid.";
+        }
+    } else {
+        $error_message = "Mohon pilih file CSV untuk diimpor.";
+    }
+}
+
+// --- Handle Export CSV (Moved to a separate file: admin/export_students.php) ---
+// This block is removed from here.
 
 // --- Fetch All Students for Display ---
 $students = [];
@@ -158,10 +316,11 @@ if ($stmt_select = mysqli_prepare($conn, $sql_select)) {
 
     <div class="mb-8 p-6 border border-gray-200 rounded-lg bg-gray-50">
         <h4 class="text-xl font-semibold text-gray-700 mb-4"><?php echo $is_edit ? 'Edit Data Siswa' : 'Tambah Siswa Baru'; ?></h4>
-        <form action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>" method="post">
+        <form action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>" method="post" enctype="multipart/form-data">
             <input type="hidden" name="action" value="<?php echo $is_edit ? 'edit' : 'add'; ?>">
             <?php if ($is_edit): ?>
                 <input type="hidden" name="student_id" value="<?php echo htmlspecialchars($student_id_to_edit); ?>">
+                <input type="hidden" name="current_photo_path" value="<?php echo htmlspecialchars($student_data_edit['photo_path']); ?>">
             <?php endif; ?>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -197,6 +356,14 @@ if ($stmt_select = mysqli_prepare($conn, $sql_select)) {
                     <label for="konsentrasi_keahlian" class="block text-gray-700 text-sm font-bold mb-2">Konsentrasi Keahlian:</label>
                     <input type="text" name="konsentrasi_keahlian" id="konsentrasi_keahlian" class="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500" value="<?php echo htmlspecialchars($student_data_edit['konsentrasi_keahlian']); ?>">
                 </div>
+                <div class="md:col-span-2">
+                    <label for="student_photo" class="block text-gray-700 text-sm font-bold mb-2">Upload Foto Siswa (PNG, JPG, GIF) <?php echo $is_edit ? '(Kosongkan jika tidak ingin mengubah)' : ''; ?>:</label>
+                    <input type="file" name="student_photo" id="student_photo" accept=".png,.jpg,.jpeg,.gif" class="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <?php if ($is_edit && !empty($student_data_edit['photo_path']) && file_exists(dirname(__DIR__) . DIRECTORY_SEPARATOR . $student_data_edit['photo_path'])): ?>
+                        <p class="text-gray-600 text-sm mt-2">Foto saat ini:</p>
+                        <img src="<?php echo htmlspecialchars('../' . $student_data_edit['photo_path']); ?>" alt="Foto Siswa" class="mt-2 h-24 w-auto object-contain rounded-md border border-gray-300 p-1">
+                    <?php endif; ?>
+                </div>
             </div>
 
             <div class="flex items-center justify-end space-x-2">
@@ -210,6 +377,35 @@ if ($stmt_select = mysqli_prepare($conn, $sql_select)) {
                 <?php endif; ?>
             </div>
         </form>
+    </div>
+
+    <div class="mb-8 p-6 border border-gray-200 rounded-lg bg-gray-50">
+        <h4 class="text-xl font-semibold text-gray-700 mb-4">Impor / Ekspor Data Siswa</h4>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+                <h5 class="text-lg font-semibold text-gray-600 mb-2">Impor dari CSV</h5>
+                <form action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>" method="post" enctype="multipart/form-data">
+                    <input type="hidden" name="import_action" value="import_csv">
+                    <div class="mb-4">
+                        <label for="csv_file" class="block text-gray-700 text-sm font-bold mb-2">Pilih file CSV:</label>
+                        <input type="file" name="csv_file" id="csv_file" accept=".csv" class="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                        <p class="text-gray-500 text-xs mt-1">Format CSV: `nisn, full_name, place_of_birth, date_of_birth, nisn_number, graduation_date, program_keahlian, konsentrasi_keahlian, photo_filename` (opsional)</p>
+                        <p class="text-red-500 text-xs mt-1">**Penting:** File foto harus disalin manual ke folder `uploads/students/` dengan nama yang sesuai di CSV.</p>
+                    </div>
+                    <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg focus:outline-none focus:shadow-outline transition duration-300 ease-in-out">
+                        <i class="fas fa-file-import mr-2"></i>Impor CSV
+                    </button>
+                </form>
+            </div>
+
+            <div>
+                <h5 class="text-lg font-semibold text-gray-600 mb-2">Ekspor ke CSV</h5>
+                <p class="text-gray-700 mb-4">Ekspor semua data siswa ke file CSV.</p>
+                <a href="export_students.php?export=csv" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg focus:outline-none focus:shadow-outline transition duration-300 ease-in-out">
+                    <i class="fas fa-file-export mr-2"></i>Ekspor CSV
+                </a>
+            </div>
+        </div>
     </div>
 
     <div class="mb-4">
@@ -254,7 +450,7 @@ if ($stmt_select = mysqli_prepare($conn, $sql_select)) {
                                     <a href="students.php?edit_id=<?php echo $student['id']; ?>" class="w-8 h-8 rounded-full bg-yellow-200 text-yellow-600 flex items-center justify-center hover:bg-yellow-300 transition duration-200" title="Edit">
                                         <i class="fas fa-edit"></i>
                                     </a>
-                                    <a href="javascript:void(0);" onclick="confirmDelete(<?php echo $student['id']; ?>, '<?php echo htmlspecialchars($student['full_name']); ?>')" class="w-8 h-8 rounded-full bg-red-200 text-red-600 flex items-center justify-center hover:bg-red-300 transition duration-200" title="Hapus">
+                                    <a href="javascript:void(0);" onclick="confirmDelete(<?php echo $student['id']; ?>, '<?php echo htmlspecialchars($student['full_name']); ?>')" class="w-8 h-8 rounded-full bg-red-200 text-red-600 flex items-center justify-center hover:bg-red-300 transition duration-300 ease-in-out" title="Hapus">
                                         <i class="fas fa-trash-alt"></i>
                                     </a>
                                 </div>
